@@ -1,17 +1,30 @@
 #include "carrera_atletismo.h"
 
+Monitor *monitor; // Declaración global del puntero al monitor
+
 // Función de comparación para ordenar las posiciones de los competidores
 int compare(const void *a, const void *b)
 {
     return ((Runner *)a)->distance - ((Runner *)b)->distance;
 }
 
+// Función que se llamará cuando se reciba la señal de fin de carrera
+void race_finish(int signum)
+{
+    for (int i = 0; i < monitor->number_runners; i++)
+    {
+        kill(monitor->runners[i].pid, SIGTERM); // Termina todos los procesos hijos
+    }
+}
+
 int main()
 {
     int shmid;
-    Monitor *monitor;
     pid_t pid;
     int i, number_runners, race_length, traveled_distance;
+
+    // Configurar el manejador de señales para SIGUSR1
+    signal(SIGUSR1, race_finish);
 
     // Solicitar al usuario el número de competidores y la longitud de la carrera
     printf("Ingrese el número de competidores: ");
@@ -46,7 +59,7 @@ int main()
 
     // Inicializar el monitor con los valores ingresados por el usuario
     monitor->number_runners = number_runners;
-    monitor->winner = -1;
+    monitor->race_finished = 0;
     for (i = 0; i < number_runners; i++)
     {
         monitor->runners[i].pid = 0;
@@ -72,36 +85,44 @@ int main()
         else if (pid == 0)
         {
             // Código del proceso hijo (competidor)
-            while (monitor->winner == -1)
+            monitor->runners[i].pid = getpid();
+            while (1)
             {
                 // Adquirir el semáforo antes de modificar la memoria compartida
                 sem_wait(&monitor->mutex);
 
+                // Si la carrera ha terminado, el competidor debe dejar de correr
+                if (monitor->race_finished)
+                {
+                    sem_post(&monitor->mutex);
+                    break;
+                }
+
                 // Calcular la distancia recorrida en esta iteración (entre 1 y 3 metros)
                 traveled_distance = rand() % 3 + 1;
                 monitor->runners[i].distance += traveled_distance;
-                monitor->runners[i].pid = getpid();
 
-                // Comprobar si el competidor ha llegado a la meta y notificar al proceso padre
                 if (monitor->runners[i].distance >= race_length)
                 {
-                    monitor->winner = i;
-                }
-                else
-                {
                     qsort(monitor->runners, number_runners, sizeof(Runner), compare);
+                    if (monitor->runners[0].pid == getpid())
+                    {
+                        kill(getppid(), SIGUSR1); // Envía una señal SIGUSR1 al proceso padre
+                    }
                 }
-                
+
                 // Liberar el semáforo después de modificar la memoria compartida
                 sem_post(&monitor->mutex);
 
                 // Dormir por un tiempo
                 usleep(1000);
             }
-
             exit(0);
         }
     }
+
+    // Esperar a recibir la señal de fin de carrera
+    pause();
 
     // Esperar a que todos los procesos hijos (competidores) terminen
     while (wait(NULL) > 0)
@@ -109,7 +130,7 @@ int main()
 
     // Imprimir los resultados de la carrera
     printf("\nResultados de la carrera:\n");
-    printf("Ganador: Competidor (PID: %d)\n", monitor->runners[monitor->winner].pid);
+    printf("Ganador: Competidor (PID: %d)\n", monitor->runners[0].pid);
     for (i = 0; i < number_runners; i++)
     {
         printf("Competidor #%d - Distancia: %d\n", monitor->runners[i].pid, monitor->runners[i].distance);

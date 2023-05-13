@@ -12,6 +12,7 @@
 #include <sys/wait.h>  // Para funciones de espera (por ejemplo, wait)
 #include <semaphore.h> // Para funciones de semáforo (por ejemplo, sem_init y sem_wait)
 #include <time.h>      // Para funciones de tiempo (por ejemplo, time)
+#include <signal.h>    // Para funciones de señales
 
 #define MAX_RUNNERS 100
 
@@ -24,7 +25,7 @@ typedef struct Runner
 // Estructura para el monitor que controla la carrera
 typedef struct Monitor
 {
-    int winner;
+    int race_finished;
     int number_runners;          // Número de competidores en la carrera
     sem_t mutex;                 // Semáforo para controlar el acceso a la memoria compartida
     Runner runners[MAX_RUNNERS]; // Array de competidores
@@ -32,6 +33,7 @@ typedef struct Monitor
 
 // Declaración de funciones utilizadas en el programa
 int compare(const void *a, const void *b); // Función de comparación para ordenar las posiciones de los competidores
+void race_finish(int signum);              // Función que se llamará cuando se reciba la señal de fin de carrera
 int main();                                // Función principal del programa
 
 // Fin de la prevención de inclusión múltiple
