@@ -111,11 +111,52 @@ void kill_childs(Monitor *monitor)
     printf("\n¡La carrera ha finalizado!\n");
 }
 
+void start_race(Monitor *monitor, int race_length)
+{
+    pid_t pid;
+
+        // Crear un proceso hijo para cada competidor
+    for (int i = 0; i < monitor->number_runners; i++)
+    {
+        pid = fork();
+        if (pid < 0)
+        {
+            perror("fork");
+            exit(1);
+        }
+        else if (pid == 0)
+        {
+            run(monitor, race_length);
+            exit(0);
+        }
+    }
+
+    // El padre imprime los resultados
+    print_status(monitor);
+
+    // El padre elimina todos los hijos de forma ordenada
+    kill_childs(monitor);
+}
+
+void initialize_monitor(Monitor *monitor, int number_runners)
+{
+    monitor->number_runners = number_runners;
+    monitor->winner = -1;
+    for (int i = 0; i < monitor->number_runners; i++)
+    {
+        monitor->runners[i].pid = 0;
+        monitor->runners[i].distance = 0;
+    }
+
+    // Initialize los semáforos
+    sem_init(&monitor->run, 1, 1);
+    sem_init(&monitor->print_distance, 1, 0);
+}
+
 int main()
 {
     int shmid;
     Monitor *monitor; // Declaración global del puntero al monitor
-    pid_t pid;
     int number_runners, race_length;
 
     // Solicitar al usuario el número de competidores y la longitud de la carrera
@@ -146,40 +187,11 @@ int main()
         exit(1);
     }
 
-    // Inicializar el monitor con los valores ingresados por el usuario
-    monitor->number_runners = number_runners;
-    monitor->winner = -1;
-    for (int i = 0; i < monitor->number_runners; i++)
-    {
-        monitor->runners[i].pid = 0;
-        monitor->runners[i].distance = 0;
-    }
+    // Inicializar el monitor con los valores proporcionados por el usuario
+    initialize_monitor(monitor, number_runners);
 
-    // Inicializa semáforos
-    sem_init(&monitor->run, 1, 1);
-    sem_init(&monitor->print_distance, 1, 0);
-
-    // Crear un proceso hijo para cada competidor
-    for (int i = 0; i < monitor->number_runners; i++)
-    {
-        pid = fork();
-        if (pid < 0)
-        {
-            perror("fork");
-            exit(1);
-        }
-        else if (pid == 0)
-        {
-            run(monitor, race_length);
-            exit(0);
-        }
-    }
-
-    // El padre imprime los resultados
-    print_status(monitor);
-
-    // El padre elimina todos los hijos de forma ordenada
-    kill_childs(monitor);
+    // Empieza la carrera
+    start_race(monitor, race_length);
 
     // Destruir el semáforo
     sem_destroy(&monitor->run);
